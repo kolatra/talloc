@@ -2,9 +2,12 @@
 #include <assert.h>
 #include <stdlib.h>
 
-void fail_if(bool flag, char *message) {
+void fail_if(bool flag, char *message, ...) {
+    va_list arg_p;
+    va_start(arg_p, message);
+
     if (flag) {
-        printf("%s\n", message);
+        vprintf(message, arg_p);
         exit(-1);
     }
 }

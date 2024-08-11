@@ -56,7 +56,7 @@ struct block_meta *request_memory(size_t size) {
     void *req_memory = sbrk(META_SIZE + size);
     fail_if(block != req_memory, "something else moved brk");
 
-    if (req_memory != (void *)-1 && block == req_memory) {
+    if (req_memory != (void *)-1) {
         block->free = false;
         block->size = size;
         block->addr = req_memory;

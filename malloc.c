@@ -31,7 +31,7 @@ void print_list() {
         printf("size: %ld\n", current->size);
         printf("addr: %p\n", current->addr);
         printf("next: %p\n", current->next);
-        printf("free: %s\n", current->free ? "true" : "false");
+        printf("free: %s\n", bool_to_string(current->free));
         printf("magic: %d\n", current->magic);
         printf("--------------------------------------\n");
         current = current->next;
@@ -50,11 +50,11 @@ struct block_meta *find_free_block(struct block_meta *last, size_t size) {
 }
 
 struct block_meta *request_memory(size_t size) {
+    // The other option for requesting memory is mmap,
+    // useful if allocating shared memory
     struct block_meta *block = sbrk(0);
     void *req_memory = sbrk(META_SIZE + size);
-    printf("[+] sbrk address: %p\n", block);
     fail_if(block != req_memory, "something else moved brk");
-    // TIL that printf calls malloc and moves the break pointer
 
     if (req_memory != (void *)-1 && block == req_memory) {
         block->free = false;
@@ -116,6 +116,8 @@ void *my_malloc(size_t size) {
         }
     }
 
+    // Move to the next "element" so that we can start
+    // using the space after the metadata
     return ret + 1;
 }
 
@@ -127,15 +129,14 @@ void my_free(struct block_meta *ptr) {
 
     ptr->free = true;
     ptr->magic = 0x87654321;
-    printf("[!] Freed %p\n", ptr);
+    printf("[~] Freed %p\n", ptr);
 }
 
 int init_heap(struct heap_meta *heap) {
     struct block_meta *mem = my_malloc(1);
     if (!mem) return -1;
 
-    // The chunk metadata is one element behind in memory, store that
-    heap->start = mem - 1;
+    heap->start = mem;
     printf("[~] size: %ld\n", mem->size);
 
     return 0;

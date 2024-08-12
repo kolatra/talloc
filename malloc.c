@@ -73,7 +73,7 @@ void *my_malloc(size_t size) {
     }
 
     // create enough room for the block metadata
-    size = size + 28;
+    size = size + META_SIZE;
     printf("Size: %ld\n", size);
 
     struct block_meta *ret = NULL;
@@ -88,13 +88,10 @@ void *my_malloc(size_t size) {
 
         ret = first_block;
     } else {
-        // check to see if we can reuse any existing space
-        // if we can, then we do
-        // if we can't then we request new space and use that
         struct block_meta *free_block = find_free_block(global_base, size);
 
         if (free_block) {
-            fail_if(!free_block->free, "._.");
+            fail_if(!free_block->free, "[!] Somehow got a non-free block");
 
             printf(
                 "[~] Found a previously free block at %p with %ld length\n",
@@ -151,21 +148,22 @@ int main() {
     #define COUNT 15
     struct block_meta *allocations[COUNT];
     for (int i = 0; i < COUNT; i++) {
-        char *test = (char *) my_malloc(26);
-        // save a copy of the start so we can free after
-        struct block_meta* start = (struct block_meta *)test - 1;
+        char *test = (char *) my_malloc(50);
 
         printf("[~] %d addr: %p\n", i, test);
         fail_if(!test, "Could not get a block");
 
         // Assign 26 bytes to something
         for (char j = 0x41; j <= 0x5a; j++) {
-            *test = j;
-            printf("[#] ADDRESS: %p DEREF: %c\n", test, *test);
-            test++;
+            *test++ = j;
         }
 
-        allocations[i] = start;
+        // move back to the start
+        test -= 26;
+
+        printf("[~] %s\n", test);
+
+        allocations[i] = (struct block_meta *)test - 1;
     }
 
     struct block_meta *empty = my_malloc(0);
@@ -173,7 +171,7 @@ int main() {
 
     // print the blocks after we make them
     printf("The blocks before freeing\n");
-    print_list();
+    // print_list();
 
     // free them
     for (int i = 0; i < COUNT; i++) {
@@ -183,7 +181,7 @@ int main() {
 
     // print again
     printf("The blocks after\n");
-    print_list();
+    // print_list();
 
     return 0;
 }

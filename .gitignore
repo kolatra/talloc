@@ -1,2 +1,4 @@
 # ignore any binaries
 a.out
+malloc_test
+malloc

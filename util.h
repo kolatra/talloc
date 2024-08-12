@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <assert.h>
 #include <stdlib.h>
+#include <stdarg.h>
 
 void fail_if(bool flag, char *message, ...) {
     va_list arg_p;

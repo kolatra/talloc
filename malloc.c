@@ -42,7 +42,6 @@ struct block_meta *find_free_block(struct block_meta *last, size_t size) {
     struct block_meta *current = last;
 
     while (current && !(current->free && current->size >= size)) {
-        last = current;
         current = current->next;
     }
 
@@ -116,6 +115,7 @@ void *my_malloc(size_t size) {
         }
     }
 
+    printf("[~] Block alloc'd at %p\n", ret);
     // Move to the next "element" so that we can start
     // using the space after the metadata
     return ret + 1;
@@ -128,7 +128,7 @@ void my_free(struct block_meta *ptr) {
     }
 
     ptr->free = true;
-    ptr->magic = 0x87654321;
+    ptr->magic = 0x25;
     printf("[~] Freed %p\n", ptr);
 }
 
@@ -151,21 +151,21 @@ int main() {
     #define COUNT 15
     struct block_meta *allocations[COUNT];
     for (int i = 0; i < COUNT; i++) {
-        size_t *test = (size_t *) my_malloc(100);
+        char *test = (char *) my_malloc(26);
         // save a copy of the start so we can free after
-        struct block_meta* start = (struct block_meta *)test;
+        struct block_meta* start = (struct block_meta *)test - 1;
 
         printf("[~] %d addr: %p\n", i, test);
         fail_if(!test, "Could not get a block");
 
-        // Assign 25 bytes to something
-        for (size_t i = 0; i < 25; i++) {
-            *test = i;
-            // printf("[#] ADDRESS: %p DEREF: %ld\n", test, *test);
+        // Assign 26 bytes to something
+        for (char j = 0x41; j <= 0x5a; j++) {
+            *test = j;
+            printf("[#] ADDRESS: %p DEREF: %c\n", test, *test);
             test++;
         }
 
-        allocations[i] = start - 1;
+        allocations[i] = start;
     }
 
     struct block_meta *empty = my_malloc(0);

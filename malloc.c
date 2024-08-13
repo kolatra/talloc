@@ -60,7 +60,7 @@ struct block_meta *request_memory(size_t size) {
         block->size = size;
         block->addr = req_memory;
         block->next = NULL;
-        block->magic = 0x12345678;
+        block->magic = 0x49;
         return block;
     }
 
@@ -74,7 +74,7 @@ void *my_malloc(size_t size) {
 
     // create enough room for the block metadata
     size = size + META_SIZE;
-    printf("Size: %ld\n", size);
+    printf("[~] Size: %ld\n", size);
 
     struct block_meta *ret = NULL;
 
@@ -112,7 +112,7 @@ void *my_malloc(size_t size) {
         }
     }
 
-    printf("[~] Block alloc'd at %p\n", ret);
+    printf("[~] Block created at %p\n", ret);
     // Move to the next "element" so that we can start
     // using the space after the metadata
     return ret + 1;
@@ -123,9 +123,16 @@ void my_free(struct block_meta *ptr) {
         printf("[!] Block starting at %p was already freed.\n", ptr);
         return;
     }
+    
+    size_t len = ptr->size;
+    ptr += 1;
+    char *bytes = (char *)ptr;
+    for (int i = 0; i < len; i++) {
+        bytes[i] = 0;
+    }
 
     ptr->free = true;
-    ptr->magic = 0x25;
+    ptr->magic = 0x45;
     printf("[~] Freed %p\n", ptr);
 }
 
@@ -140,6 +147,18 @@ int init_heap(struct heap_meta *heap) {
 }
 
 int main() {
+    FileHandler* handler = open_file("./in.txt", "r");
+    char *buf = (char *)my_malloc(handler->size);
+    struct block_meta *metadata = (struct block_meta *)buf - 1;
+
+    for (int i = 0; i < handler->size; i++) {
+        buf[i] = fgetc(handler->fp);
+    }
+
+    printf("%s\n", buf);
+
+    my_free(metadata);
+
     struct heap_meta heap = {0};
     fail_if(init_heap(&heap) == -1, "Could not initialize heap");
     printf("[~] Heap initialized\n");

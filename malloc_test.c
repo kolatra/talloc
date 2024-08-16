@@ -3,11 +3,15 @@
 #include <unistd.h>
 
 int main() {
-    int *ptr = (int *)malloc(sizeof(int) * 25);
+    #define COUNT 25
+    #define TYPE int
 
-    for (int i = 0; i < 25; i++) {
+    TYPE *ptr = (TYPE *)malloc(sizeof(TYPE) * COUNT);
+
+    for (int i = 0; i < COUNT; i++) {
         *ptr = i;
-        printf("ADDR: %p VALUE: %d\n", ptr, *ptr++);
+        printf("ADDR: %p VALUE: %d\n", ptr, *ptr);
+        ptr++;
     }
     printf("Found the null byte.\n");
     printf("haha just kidding there is no null byte, track the size of the allocation manually\n");

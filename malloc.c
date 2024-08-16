@@ -8,38 +8,37 @@
 
 #define META_SIZE sizeof(struct block_meta)
 
-struct block_meta *global_base = NULL;
-// TODO make this a property of heap_meta most likely
+// Always points to the first block
+struct block_meta *blocks_list = NULL;
 struct block_meta *latest = NULL;
-
-struct heap_meta {
-    struct block_meta *start;
-};
+struct block_meta *free_list = NULL;
 
 struct block_meta {
     size_t size;
     struct block_meta *addr;
     struct block_meta *next;
+    struct block_meta *prev;
     bool free;
     int magic;
 };
 
 void print_list() {
-    struct block_meta *current = global_base;
+    struct block_meta *current = blocks_list;
 
     while (current) {
-        printf("size: %ld\n", current->size);
-        printf("addr: %p\n", current->addr);
-        printf("next: %p\n", current->next);
-        printf("free: %s\n", bool_to_string(current->free));
-        printf("magic: %d\n", current->magic);
+        printf("[~] Block size: %ld\n", current->size);
+        printf("[~] Block addr: %p\n", current->addr);
+        printf("[~] Block next: %p\n", current->next);
+        printf("[~] Block prev: %p\n", current->prev);
+        printf("[~] Block free: %s\n", bool_to_string(current->free));
+        printf("[~] Block magic: %d\n", current->magic);
         printf("--------------------------------------\n");
         current = current->next;
     }
 }
 
-struct block_meta *find_free_block(struct block_meta *last, size_t size) {
-    struct block_meta *current = last;
+struct block_meta *find_free_block(size_t size) {
+    struct block_meta *current = free_list;
 
     while (current && !(current->free && current->size >= size)) {
         current = current->next;
@@ -51,14 +50,14 @@ struct block_meta *find_free_block(struct block_meta *last, size_t size) {
 struct block_meta *request_memory(size_t size) {
     // The other option for requesting memory is mmap,
     // useful if allocating shared memory
-    struct block_meta *block = sbrk(0);
-    void *req_memory = sbrk(META_SIZE + size);
-    fail_if(block != req_memory, "something else moved brk");
+    struct block_meta *block = sbrk(size);
+    // initialization for the first block
+    block->prev = NULL;
 
-    if (req_memory != (void *)-1) {
+    if (block != (void *)-1) {
         block->free = false;
         block->size = size;
-        block->addr = req_memory;
+        block->addr = block + 1;
         block->next = NULL;
         block->magic = 0x49;
         return block;
@@ -73,26 +72,32 @@ void *my_malloc(size_t size) {
     }
 
     // create enough room for the block metadata
-    size = size + META_SIZE;
-    printf("[~] Size: %ld\n", size);
+    size += META_SIZE;
 
-    struct block_meta *ret = NULL;
+    struct block_meta *ret;
 
-    if (!global_base) {
+    if (!blocks_list) {
         struct block_meta *first_block = request_memory(size);
-        fail_if(first_block == NULL, "could not request block");
+        fail_if(first_block == NULL, "[!] could not request first block");
 
-        global_base = first_block;
+        blocks_list = first_block;
         latest = first_block;
         printf("[~] Setting global base to %p\n", first_block);
 
         ret = first_block;
     } else {
-        struct block_meta *free_block = find_free_block(global_base, size);
+        struct block_meta *free_block = find_free_block(size);
 
         if (free_block) {
             fail_if(!free_block->free, "[!] Somehow got a non-free block");
 
+            // Optimization:
+            // this current returns very large blocks for much smaller allocations 
+            // is there a way to prefer smaller blocks?
+            // or reuse the old block and give the memory back to the OS.
+            //
+            // if a freed chunk is larger than 512 mb, split into 512 mb
+            // chunks and store them in a free list
             printf(
                 "[~] Found a previously free block at %p with %ld length\n",
                 free_block,
@@ -103,8 +108,9 @@ void *my_malloc(size_t size) {
             ret = free_block;
         } else {
             struct block_meta *new_space = request_memory(size);
-            fail_if(!new_space, "could not request block");
+            fail_if(!new_space, "[!] could not request a block");
 
+            new_space->prev = latest;
             latest->next = new_space;
             latest = latest->next;
 
@@ -112,10 +118,35 @@ void *my_malloc(size_t size) {
         }
     }
 
-    printf("[~] Block created at %p\n", ret);
-    // Move to the next "element" so that we can start
-    // using the space after the metadata
-    return ret + 1;
+    printf("[~] Block created at %p with %zu bytes\n", ret, ret->size);
+    return ret->addr;
+}
+
+void update_frees(struct block_meta *exiled_entry) {
+    if (exiled_entry == blocks_list) 
+        blocks_list = blocks_list->next;
+
+    if (exiled_entry->next)
+        exiled_entry->next->prev = exiled_entry->prev;
+
+    if (exiled_entry->prev)
+        exiled_entry->prev->next = exiled_entry->next;
+
+    exiled_entry->next = NULL;
+
+    if (free_list) {
+        struct block_meta *current = free_list;
+        // This is infinite looping because I forgot to
+        // remove the entries from here that get reused
+        // tomorrow's fix :)
+        while (current->next) {
+            current = current->next;
+        }
+        current->next = exiled_entry;
+        exiled_entry->prev = current;
+    } else {
+        free_list = exiled_entry;
+    }
 }
 
 void my_free(struct block_meta *ptr) {
@@ -125,44 +156,46 @@ void my_free(struct block_meta *ptr) {
     }
     
     size_t len = ptr->size;
-    ptr += 1;
-    char *bytes = (char *)ptr;
-    for (int i = 0; i < len; i++) {
+    char *bytes = (char *)ptr->addr;
+    for (int i = 0; i < len - META_SIZE; i++) {
+        // omg i'm overwriting my own heap metadata because i'm using the full len including the metadata and not just the block size
         bytes[i] = 0;
     }
 
     ptr->free = true;
     ptr->magic = 0x45;
+    
+    update_frees(ptr);
+
     printf("[~] Freed %p\n", ptr);
 }
 
-int init_heap(struct heap_meta *heap) {
-    struct block_meta *mem = my_malloc(1);
-    if (!mem) return -1;
-
-    heap->start = mem;
-    printf("[~] size: %ld\n", mem->size);
-
-    return 0;
-}
-
 int main() {
-    FileHandler* handler = open_file("./in.txt", "r");
-    char *buf = (char *)my_malloc(handler->size);
-    struct block_meta *metadata = (struct block_meta *)buf - 1;
+    FileHandler* handler = open_file("./numbers.txt", "r");
+    struct block_meta *ptrs[5];
+    for (int i = 0; i < 5; i++) {
+        int lines = count_lines_in_file(handler->fp);
+        char *buf = (char *)my_malloc(handler->size - lines);
+        ptrs[i] = (struct block_meta *)buf - 1;
 
-    for (int i = 0; i < handler->size; i++) {
-        buf[i] = fgetc(handler->fp);
+        for (int i = 0; i < handler->size; i++) {
+            char c = fgetc(handler->fp);
+            if (c == EOF) break;
+            if (c == '\n') {
+                i--;
+                continue;   
+            }
+            buf[i] = c;
+        }
+
+        printf("Buffer allocated.\n");
     }
 
-    printf("%s\n", buf);
-
-    my_free(metadata);
-
-    struct heap_meta heap = {0};
-    fail_if(init_heap(&heap) == -1, "Could not initialize heap");
-    printf("[~] Heap initialized\n");
-
+    for (int i = 0; i < 5; i++) {
+        my_free(ptrs[i]);
+    }
+#define DEBUG
+#ifdef DEBUG
     // Allocate multiple times to test the linked list
     #define COUNT 15
     struct block_meta *allocations[COUNT];
@@ -172,17 +205,12 @@ int main() {
         printf("[~] %d addr: %p\n", i, test);
         fail_if(!test, "Could not get a block");
 
+        allocations[i] = (struct block_meta *)test - 1;
+
         // Assign 26 bytes to something
         for (char j = 0x41; j <= 0x5a; j++) {
             *test++ = j;
         }
-
-        // move back to the start
-        test -= 26;
-
-        printf("[~] %s\n", test);
-
-        allocations[i] = (struct block_meta *)test - 1;
     }
 
     struct block_meta *empty = my_malloc(0);
@@ -196,11 +224,11 @@ int main() {
     for (int i = 0; i < COUNT; i++) {
         my_free(allocations[i]);
     }
-    my_free(heap.start);
 
     // print again
     printf("The blocks after\n");
     // print_list();
+#endif // DEBUG
 
     return 0;
 }

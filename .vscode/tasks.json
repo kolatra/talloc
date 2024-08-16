@@ -3,13 +3,11 @@
         {
             "type": "cppbuild",
             "label": "C/C++: gcc build active file",
-            "command": "/usr/bin/gcc",
+            "command": "/usr/bin/cmake",
             "args": [
-                "-fdiagnostics-color=always",
-                "-g",
-                "${file}",
-                "-o",
-                "${fileDirname}/${fileBasenameNoExtension}"
+                "--build",
+                "/home/tyler/dev/c-experiments/build",
+                "-v",
             ],
             "options": {
                 "cwd": "${fileDirname}"

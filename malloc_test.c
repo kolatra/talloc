@@ -3,7 +3,7 @@
 #include <unistd.h>
 
 int main() {
-    #define COUNT 25
+    #define COUNT 25000000
     #define TYPE int
 
     TYPE *ptr = (TYPE *)malloc(sizeof(TYPE) * COUNT);
@@ -13,6 +13,4 @@ int main() {
         printf("ADDR: %p VALUE: %d\n", ptr, *ptr);
         ptr++;
     }
-    printf("Found the null byte.\n");
-    printf("haha just kidding there is no null byte, track the size of the allocation manually\n");
 }

@@ -1,5 +1,5 @@
-run:
-    gcc malloc.c -g -o the_binary && ./the_binary
+build:
+    cmake --build /home/tyler/dev/c-experiments/build
 
 clean:
     rm the_binary && rm a.out

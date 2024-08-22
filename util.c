@@ -54,11 +54,10 @@ int count_lines_in_file(FILE *fp) {
 }
 
 FileHandler* open_file(char* path, const char* mode) {
-    FileHandler *handler = (FileHandler *)malloc(sizeof(FileHandler));
-
     FILE* fp = fopen(path, mode);
     fail_if(!fp, "Could not open file at %s.", path);
 
+    FileHandler *handler = (FileHandler *)malloc(sizeof(FileHandler));
     handler->fp = fp;
     handler->size = file_size(fp);
 

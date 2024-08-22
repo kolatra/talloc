@@ -7,23 +7,32 @@
 #include "util.h"
 
 #define META_SIZE sizeof(struct block_meta)
+#define BLOCK_PTR struct block_meta
 
-// Always points to the first block
-struct block_meta *blocks_list = NULL;
-struct block_meta *latest = NULL;
-struct block_meta *free_list = NULL;
+BLOCK_PTR *blocks_list = NULL;
+BLOCK_PTR *latest = NULL;
+BLOCK_PTR *free_list = NULL;
 
-struct block_meta {
+BLOCK_PTR {
     size_t size;
-    struct block_meta *addr;
-    struct block_meta *next;
-    struct block_meta *prev;
+    BLOCK_PTR *addr;
+    BLOCK_PTR *next;
+    BLOCK_PTR *prev;
     bool free;
     int magic;
 };
 
+void remove_from_list(BLOCK_PTR *block) {
+    if (block->next && block->prev)
+        block->next->prev = block->prev;
+    else if (block->next)
+        block->next->prev = NULL;
+    else if (block->prev)
+        block->prev->next = NULL;
+}
+
 void print_list() {
-    struct block_meta *current = blocks_list;
+    BLOCK_PTR *current = blocks_list;
 
     while (current) {
         printf("[~] Block size: %ld\n", current->size);
@@ -37,8 +46,8 @@ void print_list() {
     }
 }
 
-struct block_meta *find_free_block(size_t size) {
-    struct block_meta *current = free_list;
+BLOCK_PTR *find_free_block(size_t size) {
+    BLOCK_PTR *current = free_list;
 
     while (current && !(current->free && current->size >= size)) {
         current = current->next;
@@ -47,18 +56,17 @@ struct block_meta *find_free_block(size_t size) {
     return current;
 }
 
-struct block_meta *request_memory(size_t size) {
+BLOCK_PTR *request_memory(size_t size) {
     // The other option for requesting memory is mmap,
     // useful if allocating shared memory
-    struct block_meta *block = sbrk(size);
-    // initialization for the first block
-    block->prev = NULL;
+    BLOCK_PTR *block = sbrk(size + META_SIZE);
 
     if (block != (void *)-1) {
         block->free = false;
         block->size = size;
         block->addr = block + 1;
         block->next = NULL;
+        block->prev = NULL;
         block->magic = 0x49;
         return block;
     }
@@ -66,18 +74,15 @@ struct block_meta *request_memory(size_t size) {
     return NULL;
 }
 
-void *my_malloc(size_t size) {
+void *malloc(size_t size) {
     if (size <= 0) {
         return NULL;
     }
 
-    // create enough room for the block metadata
-    size += META_SIZE;
-
-    struct block_meta *ret;
+    BLOCK_PTR *ret;
 
     if (!blocks_list) {
-        struct block_meta *first_block = request_memory(size);
+        BLOCK_PTR *first_block = request_memory(size);
         fail_if(first_block == NULL, "[!] could not request first block");
 
         blocks_list = first_block;
@@ -85,8 +90,10 @@ void *my_malloc(size_t size) {
         printf("[~] Setting global base to %p\n", first_block);
 
         ret = first_block;
-    } else {
-        struct block_meta *free_block = find_free_block(size);
+    } 
+    
+    else {
+        BLOCK_PTR *free_block = find_free_block(size);
 
         if (free_block) {
             fail_if(!free_block->free, "[!] Somehow got a non-free block");
@@ -98,6 +105,9 @@ void *my_malloc(size_t size) {
             //
             // if a freed chunk is larger than 512 mb, split into 512 mb
             // chunks and store them in a free list
+            //
+            // give the free chunk with only the requested size, 
+            // then put a dummy free block in at the start of the unused memory
             printf(
                 "[~] Found a previously free block at %p with %ld length\n",
                 free_block,
@@ -106,8 +116,12 @@ void *my_malloc(size_t size) {
 
             free_block->free = false;
             ret = free_block;
-        } else {
-            struct block_meta *new_space = request_memory(size);
+
+            remove_from_list(free_block);
+        } 
+        
+        else {
+            BLOCK_PTR *new_space = request_memory(size);
             fail_if(!new_space, "[!] could not request a block");
 
             new_space->prev = latest;
@@ -122,23 +136,16 @@ void *my_malloc(size_t size) {
     return ret->addr;
 }
 
-void update_frees(struct block_meta *exiled_entry) {
-    if (exiled_entry == blocks_list) 
+void add_to_free_list(BLOCK_PTR *exiled_entry) {
+    if (exiled_entry == blocks_list && blocks_list->next) 
         blocks_list = blocks_list->next;
 
-    if (exiled_entry->next)
-        exiled_entry->next->prev = exiled_entry->prev;
-
-    if (exiled_entry->prev)
-        exiled_entry->prev->next = exiled_entry->next;
+    remove_from_list(exiled_entry);
 
     exiled_entry->next = NULL;
 
     if (free_list) {
-        struct block_meta *current = free_list;
-        // This is infinite looping because I forgot to
-        // remove the entries from here that get reused
-        // tomorrow's fix :)
+        BLOCK_PTR *current = free_list;
         while (current->next) {
             current = current->next;
         }
@@ -149,63 +156,66 @@ void update_frees(struct block_meta *exiled_entry) {
     }
 }
 
-void my_free(struct block_meta *ptr) {
+void free(void *p) {
+    BLOCK_PTR *ptr = (BLOCK_PTR *)p - 1;
+
     if (ptr->free) {
         printf("[!] Block starting at %p was already freed.\n", ptr);
         return;
     }
-    
-    size_t len = ptr->size;
-    char *bytes = (char *)ptr->addr;
-    for (int i = 0; i < len - META_SIZE; i++) {
-        // omg i'm overwriting my own heap metadata because i'm using the full len including the metadata and not just the block size
-        bytes[i] = 0;
-    }
+
+    memset(ptr->addr, 0, ptr->size);
 
     ptr->free = true;
     ptr->magic = 0x45;
     
-    update_frees(ptr);
+    add_to_free_list(ptr);
 
     printf("[~] Freed %p\n", ptr);
 }
 
-int main() {
-    FileHandler* handler = open_file("./numbers.txt", "r");
-    struct block_meta *ptrs[5];
+int main(int argc, char** argv) {
+    if (argc != 2) {
+        printf("Usage: ./malloc <path>\n");
+        exit(1);
+    }    
+
+    char *path = argv[1];    
+    FileHandler* handler = open_file(path, "r");
+    BLOCK_PTR *blocks[5];
     for (int i = 0; i < 5; i++) {
         int lines = count_lines_in_file(handler->fp);
-        char *buf = (char *)my_malloc(handler->size - lines);
-        ptrs[i] = (struct block_meta *)buf - 1;
+        char *buf = (char *)malloc(handler->size - lines);
+        blocks[i] = (BLOCK_PTR *)buf - 1;
 
-        for (int i = 0; i < handler->size; i++) {
+        for (int j = 0; j < handler->size; j++) {
             char c = fgetc(handler->fp);
             if (c == EOF) break;
             if (c == '\n') {
-                i--;
+                j--;
                 continue;   
             }
-            buf[i] = c;
+            buf[j] = c;
         }
 
-        printf("Buffer allocated.\n");
+        printf("[~] Buffer %d allocated.\n", i + 1);
     }
 
     for (int i = 0; i < 5; i++) {
-        my_free(ptrs[i]);
+        free(blocks[i]);
     }
-#define DEBUG
+
 #ifdef DEBUG
     // Allocate multiple times to test the linked list
     #define COUNT 15
-    struct block_meta *allocations[COUNT];
+    BLOCK_PTR *allocations[COUNT];
     for (int i = 0; i < COUNT; i++) {
         char *test = (char *) my_malloc(50);
 
         printf("[~] %d addr: %p\n", i, test);
         fail_if(!test, "Could not get a block");
 
-        allocations[i] = (struct block_meta *)test - 1;
+        allocations[i] = (BLOCK_PTR *)test - 1;
 
         // Assign 26 bytes to something
         for (char j = 0x41; j <= 0x5a; j++) {
@@ -213,7 +223,7 @@ int main() {
         }
     }
 
-    struct block_meta *empty = my_malloc(0);
+    BLOCK_PTR *empty = my_malloc(0);
     fail_if(empty != NULL, "0 malloc did not return null");
 
     // print the blocks after we make them

@@ -1,26 +1,14 @@
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 #include <stdbool.h>
 
 #include "util.h"
-
-#define META_SIZE sizeof(struct block_meta)
-#define BLOCK_PTR struct block_meta
+#include "malloc.h"
 
 BLOCK_PTR *blocks_list = NULL;
 BLOCK_PTR *latest = NULL;
 BLOCK_PTR *free_list = NULL;
-
-BLOCK_PTR {
-    size_t size;
-    BLOCK_PTR *addr;
-    BLOCK_PTR *next;
-    BLOCK_PTR *prev;
-    bool free;
-    int magic;
-};
 
 void remove_from_list(BLOCK_PTR *block) {
     if (block->next && block->prev)
@@ -74,7 +62,7 @@ BLOCK_PTR *request_memory(size_t size) {
     return NULL;
 }
 
-void *malloc(size_t size) {
+void *my_malloc(size_t size) {
     if (size <= 0) {
         return NULL;
     }
@@ -156,7 +144,7 @@ void add_to_free_list(BLOCK_PTR *exiled_entry) {
     }
 }
 
-void free(void *p) {
+void my_free(void *p) {
     BLOCK_PTR *ptr = (BLOCK_PTR *)p - 1;
 
     if (ptr->free) {
@@ -172,73 +160,4 @@ void free(void *p) {
     add_to_free_list(ptr);
 
     printf("[~] Freed %p\n", ptr);
-}
-
-int main(int argc, char** argv) {
-    if (argc != 2) {
-        printf("Usage: ./malloc <path>\n");
-        exit(1);
-    }    
-
-    char *path = argv[1];    
-    FileHandler* handler = open_file(path, "r");
-    BLOCK_PTR *blocks[5];
-    for (int i = 0; i < 5; i++) {
-        int lines = count_lines_in_file(handler->fp);
-        char *buf = (char *)malloc(handler->size - lines);
-        blocks[i] = (BLOCK_PTR *)buf - 1;
-
-        for (int j = 0; j < handler->size; j++) {
-            char c = fgetc(handler->fp);
-            if (c == EOF) break;
-            if (c == '\n') {
-                j--;
-                continue;   
-            }
-            buf[j] = c;
-        }
-
-        printf("[~] Buffer %d allocated.\n", i + 1);
-    }
-
-    for (int i = 0; i < 5; i++) {
-        free(blocks[i]);
-    }
-
-#ifdef DEBUG
-    // Allocate multiple times to test the linked list
-    #define COUNT 15
-    BLOCK_PTR *allocations[COUNT];
-    for (int i = 0; i < COUNT; i++) {
-        char *test = (char *) my_malloc(50);
-
-        printf("[~] %d addr: %p\n", i, test);
-        fail_if(!test, "Could not get a block");
-
-        allocations[i] = (BLOCK_PTR *)test - 1;
-
-        // Assign 26 bytes to something
-        for (char j = 0x41; j <= 0x5a; j++) {
-            *test++ = j;
-        }
-    }
-
-    BLOCK_PTR *empty = my_malloc(0);
-    fail_if(empty != NULL, "0 malloc did not return null");
-
-    // print the blocks after we make them
-    printf("The blocks before freeing\n");
-    // print_list();
-
-    // free them
-    for (int i = 0; i < COUNT; i++) {
-        my_free(allocations[i]);
-    }
-
-    // print again
-    printf("The blocks after\n");
-    // print_list();
-#endif // DEBUG
-
-    return 0;
 }

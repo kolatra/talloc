@@ -11,6 +11,7 @@
             "preLaunchTask": "C/C++: gcc build active file",
             "program": "${workspaceFolder}/build/malloc_test",
             "args": [
+                "123",
                 "./hello.txt"
             ],
             "stopAtEntry": false,

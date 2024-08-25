@@ -1,4 +1,3 @@
-#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -40,8 +39,8 @@ int file_size(FILE *fp) {
 
 int count_lines_in_file(FILE *fp) {
     int ret = 0;
+    char c;
 
-    int c;
     while ((c = fgetc(fp) != EOF)) {
         if (c == '\n') {
             ret++;

@@ -3,31 +3,32 @@
 #include <unistd.h>
 
 #include "malloc.h"
-
-#define BRUTEFORCE
+#include "util.h"
 
 int main(int argc, char **argv) {
-    if (argc != 2) {
-        printf("Usage: ./malloc <path>\n");
+    if (argc < 2 || argc > 3) {
+        printf("Usage: ./malloc_test [amount] [file]\n");
         return 1;
     }
 
-#ifdef BRUTEFORCE
+    if (argc == 3) {
+        goto file;
+    }
 
     int count = atoi(argv[1]);
+    fail_if(count == 0, "[!] Invalid number input\n");
     #define TYPE int
-
     for (int i = 0; i < sizeof(TYPE) * count; i++) {
         TYPE *ptr = (TYPE *)my_malloc(sizeof(TYPE));
         *ptr = i;
-        // printf("ADDR: %p VALUE: %d\n", ptr, *ptr);
+        printf("[~] p: %p v: %d\n", ptr, *ptr);
         ptr++;
+        sleep(1);
     }
+    return 0;
 
-#else // BRUTEFORCE
-
-#include "util.h"
-    char *path = argv[1];    
+file:
+    char *path = argv[2];    
     FileHandler* handler = open_file(path, "r");
     BLOCK_PTR *blocks[5];
     for (int i = 0; i < 5; i++) {
@@ -49,5 +50,4 @@ int main(int argc, char **argv) {
     for (int i = 0; i < 5; i++) {
         free(blocks[i]);
     }
-#endif // BRUTEFORCE
 }

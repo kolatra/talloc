@@ -8,7 +8,8 @@
             "name": "(gdb) Launch",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/build/malloc",
+            "preLaunchTask": "C/C++: gcc build active file",
+            "program": "${workspaceFolder}/build/malloc_test",
             "args": [
                 "./hello.txt"
             ],
